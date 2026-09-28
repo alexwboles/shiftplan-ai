@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShiftPlan AI — Employee Shift Scheduler</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="no-print topbar">
+  <div class="brand">🗓️ ShiftPlan <span class="ai">AI</span></div>
+  <div class="top-actions">
+    <button id="btn-sample" class="btn ghost">Load sample data</button>
+    <button id="btn-print" class="btn">🖨️ Print schedule</button>
+  </div>
+</div>
+
+<main class="wrap">
+  <!-- Coverage issues -->
+  <section id="coverage-panel" class="card issues hidden">
+    <h2>⚠️ Coverage issues <span id="issue-count" class="badge"></span></h2>
+    <ul id="issue-list"></ul>
+  </section>
+
+  <!-- Week navigation + grid -->
+  <section class="card">
+    <div class="weeknav">
+      <button id="btn-prev" class="btn ghost">◀ Prev</button>
+      <h2 id="week-label">Week</h2>
+      <button id="btn-next" class="btn ghost">Next ▶</button>
+    </div>
+    <div class="table-wrap"><table id="grid" class="grid"></table></div>
+  </section>
+
+  <div class="two-col">
+    <!-- Staff roster -->
+    <section class="card">
+      <h2>👥 Staff roster</h2>
+      <form id="staff-form" class="form">
+        <input id="sf-name" placeholder="Name" required>
+        <select id="sf-role"></select>
+        <input id="sf-hours" type="number" min="1" max="80" placeholder="Max hrs/wk" value="40">
+        <input id="sf-phone" placeholder="Phone (optional)">
+        <div class="avail" id="sf-avail"></div>
+        <button class="btn" type="submit">Add staff</button>
+      </form>
+      <div class="form inline">
+        <input id="new-role" placeholder="New role name">
+        <button id="btn-add-role" class="btn ghost" type="button">Add role</button>
+      </div>
+      <ul id="staff-list" class="list"></ul>
+    </section>
+
+    <!-- Templates -->
+    <section class="card">
+      <h2>📋 Shift templates</h2>
+      <div class="form inline">
+        <input id="tpl-name" placeholder="Template name">
+        <button id="btn-save-tpl" class="btn ghost" type="button">Save current week</button>
+      </div>
+      <ul id="tpl-list" class="list"></ul>
+    </section>
+  </div>
+
+  <!-- Swap board -->
+  <section class="card">
+    <h2>🔄 Shift-swap board</h2>
+    <form id="swap-form" class="form inline wrap-form">
+      <select id="sw-staff"></select>
+      <select id="sw-day"></select>
+      <select id="sw-shift"></select>
+      <select id="sw-target"><option value="">Open to anyone</option></select>
+      <button class="btn ghost" type="submit">Request swap</button>
+    </form>
+    <h3>Open</h3>
+    <ul id="swap-open" class="list"></ul>
+    <h3>Accepted / declined</h3>
+    <ul id="swap-closed" class="list"></ul>
+  </section>
+
+  <!-- Settings / AI tips -->
+  <section class="card">
+    <h2>⚙️ Settings &amp; coverage tips</h2>
+    <div class="form inline">
+      <input id="set-key" type="password" placeholder="OpenAI API key (optional)">
+      <button id="btn-save-key" class="btn ghost" type="button">Save key</button>
+      <button id="btn-clear-key" class="btn ghost" type="button">Clear</button>
+    </div>
+    <button id="btn-tips" class="btn">💡 Get coverage tips</button>
+    <ul id="tips-list" class="list"></ul>
+    <p class="muted">All data stays in your browser (localStorage). The AI button only calls OpenAI if you saved a key; otherwise it shows built-in local tips.</p>
+  </section>
+</main>
+
+<!-- Assignment dialog -->
+<dialog id="assign-dialog" class="no-print">
+  <form method="dialog">
+    <h3 id="ad-title">Assign shift</h3>
+    <div class="form">
+      <label>Staff <select id="ad-staff"></select></label>
+      <label>Role <select id="ad-role"></select></label>
+      <div class="dialog-actions">
+        <button id="ad-save" class="btn" type="button">Save</button>
+        <button id="ad-clear" class="btn ghost" type="button">Clear slot</button>
+        <button id="ad-close" class="btn ghost" value="cancel">Close</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<script src="js/logic.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
