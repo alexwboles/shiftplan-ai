@@ -8,26 +8,26 @@
 </head>
 <body>
 <div class="no-print topbar">
-  <div class="brand">🗓️ ShiftPlan <span class="ai">AI</span></div>
+  <div class="brand">ShiftPlan <span class="ai">AI</span></div>
   <div class="top-actions">
     <button id="btn-sample" class="btn ghost">Load sample data</button>
-    <button id="btn-print" class="btn">🖨️ Print schedule</button>
+    <button id="btn-print" class="btn">Print schedule</button>
   </div>
 </div>
 
 <main class="wrap">
   <!-- Coverage issues -->
   <section id="coverage-panel" class="card issues hidden">
-    <h2>⚠️ Coverage issues <span id="issue-count" class="badge"></span></h2>
+    <h2>Coverage issues <span id="issue-count" class="badge"></span></h2>
     <ul id="issue-list"></ul>
   </section>
 
   <!-- Week navigation + grid -->
   <section class="card">
     <div class="weeknav">
-      <button id="btn-prev" class="btn ghost">◀ Prev</button>
+      <button id="btn-prev" class="btn ghost">Previous</button>
       <h2 id="week-label">Week</h2>
-      <button id="btn-next" class="btn ghost">Next ▶</button>
+      <button id="btn-next" class="btn ghost">Next</button>
     </div>
     <div class="table-wrap"><table id="grid" class="grid"></table></div>
   </section>
@@ -35,7 +35,7 @@
   <div class="two-col">
     <!-- Staff roster -->
     <section class="card">
-      <h2>👥 Staff roster</h2>
+      <h2>Staff roster</h2>
       <form id="staff-form" class="form">
         <input id="sf-name" placeholder="Name" required>
         <select id="sf-role"></select>
@@ -53,7 +53,7 @@
 
     <!-- Templates -->
     <section class="card">
-      <h2>📋 Shift templates</h2>
+      <h2>Shift templates</h2>
       <div class="form inline">
         <input id="tpl-name" placeholder="Template name">
         <button id="btn-save-tpl" class="btn ghost" type="button">Save current week</button>
@@ -64,7 +64,7 @@
 
   <!-- Swap board -->
   <section class="card">
-    <h2>🔄 Shift-swap board</h2>
+    <h2>Shift-swap board</h2>
     <form id="swap-form" class="form inline wrap-form">
       <select id="sw-staff"></select>
       <select id="sw-day"></select>
@@ -80,13 +80,13 @@
 
   <!-- Settings / AI tips -->
   <section class="card">
-    <h2>⚙️ Settings &amp; coverage tips</h2>
+    <h2>Settings &amp; coverage tips</h2>
     <div class="form inline">
       <input id="set-key" type="password" placeholder="OpenAI API key (optional)">
       <button id="btn-save-key" class="btn ghost" type="button">Save key</button>
       <button id="btn-clear-key" class="btn ghost" type="button">Clear</button>
     </div>
-    <button id="btn-tips" class="btn">💡 Get coverage tips</button>
+    <button id="btn-tips" class="btn">Get coverage tips</button>
     <ul id="tips-list" class="list"></ul>
     <p class="muted">All data stays in your browser (localStorage). The AI button only calls OpenAI if you saved a key; otherwise it shows built-in local tips.</p>
   </section>
