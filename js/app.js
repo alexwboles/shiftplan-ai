@@ -4,6 +4,21 @@
   const SP = window.ShiftPlan;
   const $ = (id) => document.getElementById(id);
 
+  // Role color coding for shift chips (muted professional tones).
+  const ROLE_PALETTE = [
+    { bg: "#e6f4f2", fg: "#0f766e", bar: "#0f766e" },
+    { bg: "#fdf0d7", fg: "#92400e", bar: "#d97706" },
+    { bg: "#ffe4e6", fg: "#be123c", bar: "#e11d48" },
+    { bg: "#eef8d8", fg: "#4d7c0f", bar: "#65a30d" },
+    { bg: "#e0f0fa", fg: "#075985", bar: "#0284c7" },
+    { bg: "#f1e8d8", fg: "#8a5a18", bar: "#b45309" },
+    { bg: "#e8eaee", fg: "#3f4753", bar: "#64748b" }
+  ];
+  function roleColor(role) {
+    const i = Math.max(0, state.roles.indexOf(role));
+    return ROLE_PALETTE[i % ROLE_PALETTE.length];
+  }
+
   let state = SP.createStore();
   let currentWeek = SP.weekMonday(new Date());
   let dialogCtx = null; // { day, shift }
@@ -80,34 +95,58 @@
     $("issue-list").innerHTML = issueText(g).map(t => `<li>${escapeHtml(t)}</li>`).join("");
   }
 
-  // ---------- grid ----------
+  // ---------- grid: 7-day column canvas ----------
   function renderGrid() {
     const g = SP.detectGaps(state, currentWeek);
     const gapSlots = new Set(g.understaffed.map(u => u.day + "-" + u.shift));
-    const tbl = $("grid");
+    const grid = $("grid");
     const mon = new Date(currentWeek + "T12:00:00");
-    let html = "<tr><th>Day</th>" + SP.SHIFTS.map(s => `<th>${s}</th>`).join("") + "</tr>";
+    const now = new Date();
+    let html = "";
+    let totalShifts = 0, totalSlots = 0, openSlots = 0;
     for (let d = 0; d < 7; d++) {
       const dt = new Date(mon); dt.setDate(dt.getDate() + d);
-      const dateStr = dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-      html += `<tr><td class="daycol">${SP.DAYS[d]}<br><span class="meta">${dateStr}</span></td>`;
-      for (let s = 0; s < 3; s++) {
+      const isToday = dt.getFullYear() === now.getFullYear() &&
+        dt.getMonth() === now.getMonth() && dt.getDate() === now.getDate();
+      html += `<div class="daycol${isToday ? " today" : ""}">`;
+      html += `<div class="dayhead"><span class="dow">${SP.DAYS[d].slice(0, 3)}</span>` +
+        `<span class="dnum">${dt.getDate()}</span>` +
+        (isToday ? `<span class="todaypill">Today</span>` : "") + `</div>`;
+      for (let s = 0; s < SP.SHIFTS.length; s++) {
         const asgs = SP.getSlot(state, currentWeek, d, s);
+        const gap = gapSlots.has(d + "-" + s);
+        totalSlots++;
+        if (gap) openSlots++;
         const inner = asgs.length
           ? asgs.map(a => {
               const st = SP.findStaff(state, a.staffId);
-              return `<div class="asg">${escapeHtml(st ? st.name : "?")} <span class="r">(${escapeHtml(a.role)})</span></div>`;
+              const rc = roleColor(a.role);
+              totalShifts++;
+              return `<div class="asg" style="--rc:${rc.bar};--rcbg:${rc.bg};--rcfg:${rc.fg}">` +
+                `<strong>${escapeHtml(st ? st.name : "?")}</strong>` +
+                `<span class="r">${escapeHtml(a.role)}</span></div>`;
             }).join("")
-          : `<div class="empty">— empty —</div>`;
-        const flag = gapSlots.has(d + "-" + s) ? `<div class="gapflag">⚠ understaffed</div>` : "";
-        html += `<td><div class="slot" data-day="${d}" data-shift="${s}">${inner}${flag}</div></td>`;
+          : `<div class="empty">${gap ? "Needs coverage" : "Open"}</div>`;
+        const flag = gap ? `<div class="gapflag">Needs coverage</div>` : "";
+        html += `<div class="shiftblock"><div class="shiftname">${escapeHtml(SP.SHIFTS[s])}</div>` +
+          `<div class="slot${gap ? " gap" : ""}" data-day="${d}" data-shift="${s}">${inner}${flag}</div></div>`;
       }
-      html += "</tr>";
+      html += `</div>`;
     }
-    tbl.innerHTML = html;
-    tbl.querySelectorAll(".slot").forEach(el => {
+    grid.innerHTML = html;
+    grid.querySelectorAll(".slot").forEach(el => {
       el.addEventListener("click", () => openDialog(+el.dataset.day, +el.dataset.shift));
     });
+    // Ops-wall stats strip
+    const hours = SP.weekHours(state, currentWeek);
+    const totalHours = Object.values(hours).reduce((a, b) => a + b, 0);
+    const stats = $("ops-stats");
+    if (stats) {
+      stats.innerHTML =
+        `<span><b>${totalShifts}</b> shifts</span>` +
+        `<span><b>${totalHours}h</b> scheduled</span>` +
+        `<span class="${openSlots ? "alert" : ""}"><b>${openSlots}</b> need coverage</span>`;
+    }
   }
 
   function renderWeekLabel() {
@@ -128,9 +167,12 @@
     const hours = SP.weekHours(state, currentWeek);
     $("staff-list").innerHTML = state.staff.map(st => {
       const h = hours[st.id] || 0;
-      const over = h > st.maxHours ? ' style="color:var(--danger);font-weight:700"' : "";
+      const pct = st.maxHours > 0 ? Math.min(100, Math.round(h / st.maxHours * 100)) : 0;
+      const over = h > st.maxHours;
       const avail = st.availability.map(a => SP.DAYS[a].slice(0,2)).join(" ");
-      return `<li><div><strong>${escapeHtml(st.name)}</strong> <span class="meta">${escapeHtml(st.role)} · <span${over}>${h}h/${st.maxHours}h</span>${st.phone ? " · " + escapeHtml(st.phone) : ""}<br>Available: ${avail}</span></div>
+      return `<li><div class="staff-main"><strong>${escapeHtml(st.name)}</strong> ` +
+        `<span class="meta">${escapeHtml(st.role)}${st.phone ? " · " + escapeHtml(st.phone) : ""}<br>Available: ${avail}</span>` +
+        `<span class="hours${over ? " over" : ""}"><span class="hbar"><span style="width:${pct}%"></span></span>${h}h / ${st.maxHours}h</span></div>
         <div class="actions"><button class="btn small danger" data-remove="${st.id}">Remove</button></div></li>`;
     }).join("") || `<li class="meta">No staff yet.</li>`;
     $("staff-list").querySelectorAll("[data-remove]").forEach(b => {

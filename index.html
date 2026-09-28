@@ -7,45 +7,64 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div class="no-print topbar">
-  <div class="brand">ShiftPlan <span class="ai">AI</span></div>
+<div class="no-print opsbar">
+  <div class="brand">
+    <svg class="brand-clock" viewBox="0 0 40 40" aria-hidden="true">
+      <circle cx="20" cy="20" r="17" fill="none" stroke="#d97706" stroke-width="3"/>
+      <path d="M20 11 V20 L27 24" fill="none" stroke="#d97706" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+    <div>
+      <strong>ShiftPlan <span class="ai">AI</span></strong>
+      <span class="brand-sub">Weekly ops wall</span>
+    </div>
+  </div>
+  <div class="ops-stats" id="ops-stats" aria-live="polite"></div>
   <div class="top-actions">
-    <button id="btn-sample" class="btn ghost">Load sample data</button>
-    <button id="btn-print" class="btn">Print schedule</button>
+    <button id="btn-sample" class="btn ghostdark">Load sample data</button>
+    <button id="btn-print" class="btn brass">Print schedule</button>
   </div>
 </div>
 
 <main class="wrap">
   <!-- Coverage issues -->
-  <section id="coverage-panel" class="card issues hidden">
-    <h2>Coverage issues <span id="issue-count" class="badge"></span></h2>
+  <section id="coverage-panel" class="issues-banner hidden">
+    <div class="issues-head">
+      <span class="issues-icon" aria-hidden="true">!</span>
+      <h2>Coverage issues <span id="issue-count" class="badge"></span></h2>
+    </div>
     <ul id="issue-list"></ul>
   </section>
 
-  <!-- Week navigation + grid -->
-  <section class="card">
+  <!-- Week navigation + canvas -->
+  <section class="card weekcard">
     <div class="weeknav">
-      <button id="btn-prev" class="btn ghost">Previous</button>
+      <button id="btn-prev" class="btn ghost">← Previous</button>
       <h2 id="week-label">Week</h2>
-      <button id="btn-next" class="btn ghost">Next</button>
+      <button id="btn-next" class="btn ghost">Next →</button>
     </div>
-    <div class="table-wrap"><table id="grid" class="grid"></table></div>
+    <div class="canvas-scroll"><div id="grid" class="weekgrid"></div></div>
+    <p class="muted small canvas-hint">Click any slot to assign, change, or clear it.</p>
   </section>
 
   <div class="two-col">
     <!-- Staff roster -->
     <section class="card">
+      <p class="kicker">Crew</p>
       <h2>Staff roster</h2>
       <form id="staff-form" class="form">
-        <input id="sf-name" placeholder="Name" required>
-        <select id="sf-role"></select>
-        <input id="sf-hours" type="number" min="1" max="80" placeholder="Max hrs/wk" value="40">
-        <input id="sf-phone" placeholder="Phone (optional)">
+        <div class="frow">
+          <input id="sf-name" placeholder="Name" required aria-label="Staff name">
+          <select id="sf-role" aria-label="Role"></select>
+        </div>
+        <div class="frow">
+          <input id="sf-hours" type="number" min="1" max="80" placeholder="Max hrs/wk" value="40" aria-label="Max hours per week">
+          <input id="sf-phone" placeholder="Phone (optional)" aria-label="Phone">
+        </div>
         <div class="avail" id="sf-avail"></div>
-        <button class="btn" type="submit">Add staff</button>
+        <button class="btn brass" type="submit">Add staff</button>
       </form>
       <div class="form inline">
-        <input id="new-role" placeholder="New role name">
+        <input id="new-role" placeholder="New role name" aria-label="New role name">
         <button id="btn-add-role" class="btn ghost" type="button">Add role</button>
       </div>
       <ul id="staff-list" class="list"></ul>
@@ -53,9 +72,10 @@
 
     <!-- Templates -->
     <section class="card">
+      <p class="kicker">Reuse</p>
       <h2>Shift templates</h2>
       <div class="form inline">
-        <input id="tpl-name" placeholder="Template name">
+        <input id="tpl-name" placeholder="Template name" aria-label="Template name">
         <button id="btn-save-tpl" class="btn ghost" type="button">Save current week</button>
       </div>
       <ul id="tpl-list" class="list"></ul>
@@ -64,12 +84,13 @@
 
   <!-- Swap board -->
   <section class="card">
+    <p class="kicker">Trades</p>
     <h2>Shift-swap board</h2>
     <form id="swap-form" class="form inline wrap-form">
-      <select id="sw-staff"></select>
-      <select id="sw-day"></select>
-      <select id="sw-shift"></select>
-      <select id="sw-target"><option value="">Open to anyone</option></select>
+      <select id="sw-staff" aria-label="Staff requesting swap"></select>
+      <select id="sw-day" aria-label="Day"></select>
+      <select id="sw-shift" aria-label="Shift"></select>
+      <select id="sw-target" aria-label="Swap target"><option value="">Open to anyone</option></select>
       <button class="btn ghost" type="submit">Request swap</button>
     </form>
     <h3>Open</h3>
@@ -80,13 +101,14 @@
 
   <!-- Settings / AI tips -->
   <section class="card">
+    <p class="kicker">Coach</p>
     <h2>Settings &amp; coverage tips</h2>
     <div class="form inline">
-      <input id="set-key" type="password" placeholder="OpenAI API key (optional)">
+      <input id="set-key" type="password" placeholder="OpenAI API key (optional)" aria-label="OpenAI API key">
       <button id="btn-save-key" class="btn ghost" type="button">Save key</button>
       <button id="btn-clear-key" class="btn ghost" type="button">Clear</button>
     </div>
-    <button id="btn-tips" class="btn">Get coverage tips</button>
+    <button id="btn-tips" class="btn brass">Get coverage tips</button>
     <ul id="tips-list" class="list"></ul>
     <p class="muted">All data stays in your browser (localStorage). The AI button only calls OpenAI if you saved a key; otherwise it shows built-in local tips.</p>
   </section>
@@ -94,13 +116,13 @@
 
 <!-- Assignment dialog -->
 <dialog id="assign-dialog" class="no-print">
-  <form method="dialog">
+  <form method="dialog" class="dlg">
     <h3 id="ad-title">Assign shift</h3>
     <div class="form">
       <label>Staff <select id="ad-staff"></select></label>
       <label>Role <select id="ad-role"></select></label>
       <div class="dialog-actions">
-        <button id="ad-save" class="btn" type="button">Save</button>
+        <button id="ad-save" class="btn brass" type="button">Save</button>
         <button id="ad-clear" class="btn ghost" type="button">Clear slot</button>
         <button id="ad-close" class="btn ghost" value="cancel">Close</button>
       </div>
