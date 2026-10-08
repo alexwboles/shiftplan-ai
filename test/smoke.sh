@@ -74,6 +74,52 @@ node_assert "weekMonday returns the Monday" \
 node_assert "heuristicTips reports understaffed slots" \
   "(()=>{const s=SP.createStore();const tips=SP.heuristicTips(s,'2026-09-28');return tips.some(t=>/understaffed/i.test(t));})()"
 
+# wage validation
+node_assert "addStaff rejects negative wage" \
+  "SP.addStaff(SP.createStore(),{name:'Ava',role:'Manager',maxHours:40,wage:-2}).ok===false"
+node_assert "addStaff accepts wage, stored on staff" \
+  "(()=>{const s=SP.createStore();const r=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40,wage:18.5});return r.ok&&r.staff.wage===18.5;})()"
+node_assert "addStaff defaults wage to 0 when omitted" \
+  "(()=>{const s=SP.createStore();const r=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40});return r.ok&&r.staff.wage===0;})()"
+
+# labor cost
+node_assert "laborCost estimates weekly cost from wages" \
+  "(()=>{const s=SP.createStore();const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40,wage:20});const b=SP.addStaff(s,{name:'Ben',role:'Cashier',maxHours:40,wage:15});SP.assign(s,'2026-09-28',0,0,a.staff.id);SP.assign(s,'2026-09-28',1,0,a.staff.id);SP.assign(s,'2026-09-28',1,0,b.staff.id);const c=SP.laborCost(s,'2026-09-28');return c.perStaff[a.staff.id]===160&&c.perStaff[b.staff.id]===60&&c.total===220;})()"
+node_assert "laborCost is 0 with no wages set" \
+  "(()=>{const s=SP.createStore();const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40});SP.assign(s,'2026-09-28',0,0,a.staff.id);return SP.laborCost(s,'2026-09-28').total===0;})()"
+
+# near-max-hours warnings
+node_assert "detectGaps warns near-max (90%+) hours" \
+  "(()=>{const s=SP.createStore();const r=SP.addStaff(s,{name:'Cara',role:'Cook',maxHours:40});SP.assign(s,'2026-09-28',0,0,r.staff.id);SP.assign(s,'2026-09-28',1,0,r.staff.id);SP.assign(s,'2026-09-28',2,0,r.staff.id);SP.assign(s,'2026-09-28',3,0,r.staff.id);SP.assign(s,'2026-09-28',4,0,r.staff.id);SP.assign(s,'2026-09-28',5,0,r.staff.id);SP.assign(s,'2026-09-28',6,0,r.staff.id);SP.assign(s,'2026-09-28',0,1,r.staff.id);SP.assign(s,'2026-09-28',1,1,r.staff.id);const g=SP.detectGaps(s,'2026-09-28');return g.nearMaxHours.some(n=>n.staffId===r.staff.id&&n.hours===36)&&g.overMaxHours.length===0;})()"
+node_assert "detectGaps does not double-flag over-max as near-max" \
+  "(()=>{const s=SP.createStore();const r=SP.addStaff(s,{name:'Dan',role:'Server',maxHours:4});SP.assign(s,'2026-09-28',0,0,r.staff.id);SP.assign(s,'2026-09-28',1,0,r.staff.id);const g=SP.detectGaps(s,'2026-09-28');return g.overMaxHours.length===1&&g.nearMaxHours.length===0;})()"
+
+# copyWeek
+node_assert "copyWeek clones last week's assignments" \
+  "(()=>{const s=SP.createStore();const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40});SP.assign(s,'2026-09-28',0,0,a.staff.id,'Manager');const r=SP.copyWeek(s,'2026-09-28','2026-10-05');return r.ok&&r.copied===1&&SP.getSlot(s,'2026-10-05',0,0).some(x=>x.staffId===a.staff.id);})()"
+node_assert "copyWeek skips staff no longer on the roster" \
+  "(()=>{const s=SP.createStore();const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40});SP.assign(s,'2026-09-28',0,0,a.staff.id);SP.removeStaff(s,a.staff.id);const r=SP.copyWeek(s,'2026-09-28','2026-10-05');return r.ok&&r.copied===0&&SP.getSlot(s,'2026-10-05',0,0).length===0;})()"
+node_assert "copyWeek fails cleanly with no source week" \
+  "SP.copyWeek(SP.createStore(),'2026-09-28','2026-10-05').ok===false"
+
+# slot notes
+node_assert "slot notes round-trip and clear" \
+  "(()=>{const s=SP.createStore();SP.setSlotNote(s,'2026-09-28',0,0,'Holiday rush');const a=SP.getSlotNote(s,'2026-09-28',0,0)==='Holiday rush';SP.setSlotNote(s,'2026-09-28',0,0,'');return a&&SP.getSlotNote(s,'2026-09-28',0,0)==='';})()"
+node_assert "slot note trims and caps length" \
+  "(()=>{const s=SP.createStore();SP.setSlotNote(s,'2026-09-28',1,2,'  x'.repeat(200));return SP.getSlotNote(s,'2026-09-28',1,2).length===120;})()"
+
+# schedule CSV
+node_assert "scheduleCSV exports header + assignment rows" \
+  "(()=>{const s=SP.createStore();const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40});SP.assign(s,'2026-09-28',0,0,a.staff.id,'Manager');const csv=SP.scheduleCSV(s,'2026-09-28');const lines=csv.split('\n');return lines.length===2&&lines[0].indexOf('\"Day\",\"Date\",\"Shift\",\"Staff\",\"Role\",\"Hours\"')===0&&lines[1].indexOf('\"Ava\"')>0&&lines[1].indexOf('Monday')>0;})()"
+
+# new UI hooks exist
+node_assert "index.html has new UI hooks" \
+  "(()=>{const fs=require('fs');const h=fs.readFileSync(require('path').join('$DIR'.replace(/\\$/,''),'index.html'),'utf8');return ['btn-copy-week','btn-export-csv','sf-wage','ad-note'].every(id=>h.includes('id=\"'+id+'\"'));})()"
+
+# no rounded rectangles
+node_assert "no rounded rectangles in css" \
+  "(()=>{const fs=require('fs');const css=fs.readFileSync('$DIR/css/style.css','utf8');const bad=[...css.matchAll(/border-radius:\\s*([^;}]+)/g)].map(m=>m[1].trim()).filter(v=>!/^(0|50%|var\\(--radius\\))$/.test(v));return bad.length===0;})()"
+
 echo "----"
 echo "smoke: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

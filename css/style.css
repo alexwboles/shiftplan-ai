@@ -147,6 +147,11 @@ body {
   font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
   color: var(--danger); text-align: center;
 }
+.slotnote {
+  font-size: .74rem; color: var(--ink-soft); background: #f6f1e3;
+  border-left: 3px solid var(--accent-bright); padding: .25rem .45rem;
+  line-height: 1.35;
+}
 .canvas-hint { margin: .8rem 0 0; text-align: center; }
 
 /* ---------- forms / lists ---------- */

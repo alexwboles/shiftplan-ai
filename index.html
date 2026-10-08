@@ -22,6 +22,7 @@
   <div class="top-actions">
     <button id="btn-sample" class="btn ghostdark">Load sample data</button>
     <button id="btn-print" class="btn brass">Print schedule</button>
+    <button id="btn-export-csv" class="btn ghostdark">Export CSV</button>
   </div>
 </div>
 
@@ -40,6 +41,7 @@
     <div class="weeknav">
       <button id="btn-prev" class="btn ghost">← Previous</button>
       <h2 id="week-label">Week</h2>
+      <button id="btn-copy-week" class="btn ghost">Repeat last week</button>
       <button id="btn-next" class="btn ghost">Next →</button>
     </div>
     <div class="canvas-scroll"><div id="grid" class="weekgrid"></div></div>
@@ -59,6 +61,9 @@
         <div class="frow">
           <input id="sf-hours" type="number" min="1" max="80" placeholder="Max hrs/wk" value="40" aria-label="Max hours per week">
           <input id="sf-phone" placeholder="Phone (optional)" aria-label="Phone">
+        </div>
+        <div class="frow">
+          <input id="sf-wage" type="number" min="0" step="0.01" placeholder="Wage $/hr (optional)" aria-label="Hourly wage">
         </div>
         <div class="avail" id="sf-avail"></div>
         <button class="btn brass" type="submit">Add staff</button>
@@ -121,6 +126,7 @@
     <div class="form">
       <label>Staff <select id="ad-staff"></select></label>
       <label>Role <select id="ad-role"></select></label>
+      <label>Shift note <input id="ad-note" maxlength="120" placeholder="e.g. holiday rush, training shift"></label>
       <div class="dialog-actions">
         <button id="ad-save" class="btn brass" type="button">Save</button>
         <button id="ad-clear" class="btn ghost" type="button">Clear slot</button>

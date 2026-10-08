@@ -80,6 +80,9 @@
     g.overMaxHours.forEach(o => {
       lines.push(`Over max hours: ${o.name} scheduled ${o.hours}h (max ${o.maxHours}h).`);
     });
+    g.nearMaxHours.forEach(n => {
+      lines.push(`Warning: ${n.name} at ${n.hours}h of ${n.maxHours}h max — approaching the weekly limit.`);
+    });
     g.unavailable.forEach(u => {
       lines.push(`Unavailable: ${u.name} assigned ${SP.DAYS[u.day]} ${SP.SHIFTS[u.shift]} but is off that day.`);
     });
@@ -115,6 +118,7 @@
       for (let s = 0; s < SP.SHIFTS.length; s++) {
         const asgs = SP.getSlot(state, currentWeek, d, s);
         const gap = gapSlots.has(d + "-" + s);
+        const note = SP.getSlotNote(state, currentWeek, d, s);
         totalSlots++;
         if (gap) openSlots++;
         const inner = asgs.length
@@ -128,8 +132,9 @@
             }).join("")
           : `<div class="empty">${gap ? "Needs coverage" : "Open"}</div>`;
         const flag = gap ? `<div class="gapflag">Needs coverage</div>` : "";
+        const noteHtml = note ? `<div class="slotnote">${escapeHtml(note)}</div>` : "";
         html += `<div class="shiftblock"><div class="shiftname">${escapeHtml(SP.SHIFTS[s])}</div>` +
-          `<div class="slot${gap ? " gap" : ""}" data-day="${d}" data-shift="${s}">${inner}${flag}</div></div>`;
+          `<div class="slot${gap ? " gap" : ""}" data-day="${d}" data-shift="${s}">${inner}${noteHtml}${flag}</div></div>`;
       }
       html += `</div>`;
     }
@@ -140,12 +145,14 @@
     // Ops-wall stats strip
     const hours = SP.weekHours(state, currentWeek);
     const totalHours = Object.values(hours).reduce((a, b) => a + b, 0);
+    const cost = SP.laborCost(state, currentWeek);
     const stats = $("ops-stats");
     if (stats) {
       stats.innerHTML =
         `<span><b>${totalShifts}</b> shifts</span>` +
         `<span><b>${totalHours}h</b> scheduled</span>` +
-        `<span class="${openSlots ? "alert" : ""}"><b>${openSlots}</b> need coverage</span>`;
+        `<span class="${openSlots ? "alert" : ""}"><b>${openSlots}</b> need coverage</span>` +
+        (cost.total > 0 ? `<span><b>$${cost.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> labor cost</span>` : "");
     }
   }
 
@@ -170,8 +177,9 @@
       const pct = st.maxHours > 0 ? Math.min(100, Math.round(h / st.maxHours * 100)) : 0;
       const over = h > st.maxHours;
       const avail = st.availability.map(a => SP.DAYS[a].slice(0,2)).join(" ");
+      const wageTxt = (Number(st.wage) || 0) > 0 ? ` · $${Number(st.wage)}/hr` : "";
       return `<li><div class="staff-main"><strong>${escapeHtml(st.name)}</strong> ` +
-        `<span class="meta">${escapeHtml(st.role)}${st.phone ? " · " + escapeHtml(st.phone) : ""}<br>Available: ${avail}</span>` +
+        `<span class="meta">${escapeHtml(st.role)}${wageTxt}${st.phone ? " · " + escapeHtml(st.phone) : ""}<br>Available: ${avail}</span>` +
         `<span class="hours${over ? " over" : ""}"><span class="hbar"><span style="width:${pct}%"></span></span>${h}h / ${st.maxHours}h</span></div>
         <div class="actions"><button class="btn small danger" data-remove="${st.id}">Remove</button></div></li>`;
     }).join("") || `<li class="meta">No staff yet.</li>`;
@@ -259,6 +267,7 @@
     $("ad-staff").innerHTML = state.staff.map(st =>
       `<option value="${st.id}">${escapeHtml(st.name)} (${escapeHtml(st.role)})</option>`).join("");
     $("ad-role").innerHTML = state.roles.map(r => `<option>${escapeHtml(r)}</option>`).join("");
+    $("ad-note").value = SP.getSlotNote(state, currentWeek, day, shift);
     $("assign-dialog").showModal();
   }
 
@@ -326,16 +335,35 @@
     $("btn-next").addEventListener("click", () => { currentWeek = SP.shiftWeekKey(currentWeek, 1); renderAll(); });
     $("btn-print").addEventListener("click", () => window.print());
     $("btn-sample").addEventListener("click", loadSampleData);
+    $("btn-copy-week").addEventListener("click", () => {
+      const prev = SP.shiftWeekKey(currentWeek, -1);
+      if (!confirm(`Copy last week's schedule (${prev}) into this week? Current assignments will be replaced.`)) return;
+      const r = SP.copyWeek(state, prev, currentWeek);
+      if (!r.ok) { alert(r.error); return; }
+      save(); renderAll();
+      alert(`Copied ${r.copied} assignment${r.copied === 1 ? "" : "s"} from last week.`);
+    });
+    $("btn-export-csv").addEventListener("click", () => {
+      const blob = new Blob([SP.scheduleCSV(state, currentWeek)], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `shiftplan-${currentWeek}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    });
 
     $("staff-form").addEventListener("submit", (e) => {
       e.preventDefault();
       const availability = [...$("sf-avail").querySelectorAll("input:checked")].map(i => +i.value);
       const r = SP.addStaff(state, {
         name: $("sf-name").value, role: $("sf-role").value,
-        maxHours: +$("sf-hours").value, phone: $("sf-phone").value, availability
+        maxHours: +$("sf-hours").value, phone: $("sf-phone").value,
+        wage: $("sf-wage").value, availability
       });
       if (!r.ok) { alert(r.errors.join("\n")); return; }
-      $("sf-name").value = ""; $("sf-phone").value = "";
+      $("sf-name").value = ""; $("sf-phone").value = ""; $("sf-wage").value = "";
       save(); renderAll();
     });
 
@@ -372,6 +400,7 @@
       if (!staffId) { alert("Add staff to the roster first."); return; }
       const r = SP.assign(state, currentWeek, dialogCtx.day, dialogCtx.shift, staffId, role);
       if (!r.ok) alert(r.error);
+      SP.setSlotNote(state, currentWeek, dialogCtx.day, dialogCtx.shift, $("ad-note").value);
       $("assign-dialog").close();
       save(); renderAll();
     });
@@ -379,6 +408,7 @@
       if (!dialogCtx) return;
       const asgs = SP.getSlot(state, currentWeek, dialogCtx.day, dialogCtx.shift);
       asgs.map(a => a.staffId).forEach(id => SP.unassign(state, currentWeek, dialogCtx.day, dialogCtx.shift, id));
+      SP.setSlotNote(state, currentWeek, dialogCtx.day, dialogCtx.shift, "");
       $("assign-dialog").close();
       save(); renderAll();
     });

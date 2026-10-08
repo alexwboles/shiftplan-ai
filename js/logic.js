@@ -61,6 +61,7 @@
 
   function getWeek(state, mondayKey) {
     if (!state.weeks[mondayKey]) state.weeks[mondayKey] = { slots: {} };
+    if (!state.weeks[mondayKey].notes) state.weeks[mondayKey].notes = {};
     return state.weeks[mondayKey];
   }
 
@@ -96,7 +97,13 @@
     }
     const maxHours = Number(input.maxHours);
     if (!Number.isFinite(maxHours) || maxHours <= 0) errors.push("Max hours/week must be a positive number.");
-    return { errors, clean: { name, role, availability: deepCopy(availability), maxHours, phone: (input.phone || "").trim() } };
+    // optional hourly wage ($/hr) — powers the labor-cost estimate; 0 = unpaid/unknown
+    let wage = 0;
+    if (input.wage !== undefined && input.wage !== null && input.wage !== "") {
+      wage = Number(input.wage);
+      if (!Number.isFinite(wage) || wage < 0) errors.push("Hourly wage must be 0 or more.");
+    }
+    return { errors, clean: { name, role, availability: deepCopy(availability), maxHours, wage, phone: (input.phone || "").trim() } };
   }
 
   function addStaff(state, input) {
@@ -185,11 +192,80 @@
     return out;
   }
 
+  // ---------- Labor-cost estimate ----------
+  // laborCost(state, mondayKey) -> { perStaff: {id: cost}, total } using each
+  // staff member's hourly wage (staff without a wage contribute $0).
+  function laborCost(state, mondayKey) {
+    const perStaff = {};
+    let total = 0;
+    state.staff.forEach(st => {
+      const wage = Number(st.wage) || 0;
+      const cost = Math.round(staffHours(state, mondayKey, st.id) * wage * 100) / 100;
+      perStaff[st.id] = cost;
+      total = Math.round((total + cost) * 100) / 100;
+    });
+    return { perStaff, total };
+  }
+
+  // ---------- Copy a week ----------
+  // copyWeek(state, fromKey, toKey) — clone the previous week's assignments
+  // (staff still on the roster only) into the target week, replacing it.
+  function copyWeek(state, fromKey, toKey) {
+    const src = state.weeks[fromKey];
+    if (!src) return { ok: false, error: "No schedule found for the source week." };
+    const existing = new Set(state.staff.map(s => s.id));
+    const slots = {};
+    let copied = 0;
+    Object.keys(src.slots || {}).forEach(sk => {
+      const kept = deepCopy(src.slots[sk]).filter(a => existing.has(a.staffId));
+      if (kept.length) { slots[sk] = kept; copied += kept.length; }
+    });
+    state.weeks[toKey] = { slots, notes: deepCopy(src.notes || {}) };
+    return { ok: true, copied };
+  }
+
+  // ---------- Slot notes ----------
+  function getSlotNote(state, mondayKey, day, shift) {
+    const week = state.weeks[mondayKey];
+    return (week && week.notes && week.notes[slotKey(day, shift)]) || "";
+  }
+  function setSlotNote(state, mondayKey, day, shift, note) {
+    const week = getWeek(state, mondayKey);
+    note = (note || "").trim();
+    if (note) week.notes[slotKey(day, shift)] = note.slice(0, 120);
+    else delete week.notes[slotKey(day, shift)];
+    return { ok: true };
+  }
+
+  // ---------- Schedule CSV export ----------
+  function csvCell(v) {
+    return '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+  }
+  // scheduleCSV(state, mondayKey) -> "Day,Date,Shift,Staff,Role,Hours" rows.
+  function scheduleCSV(state, mondayKey) {
+    const lines = [["Day", "Date", "Shift", "Staff", "Role", "Hours"].map(csvCell).join(",")];
+    for (let d = 0; d < 7; d++) {
+      for (let s = 0; s < 3; s++) {
+        const asgs = getSlot(state, mondayKey, d, s);
+        asgs.forEach(a => {
+          const st = findStaff(state, a.staffId);
+          lines.push([
+            DAYS[d], dayLabel(mondayKey, d), SHIFTS[s],
+            st ? st.name : "(removed)", a.role,
+            state.shiftHours[SHIFTS[s]] || 0
+          ].map(csvCell).join(","));
+        });
+      }
+    }
+    return lines.join("\n");
+  }
+
   // ---------- Coverage-gap detector ----------
   function detectGaps(state, mondayKey) {
     const understaffed = [];
     const doubleBooked = [];
     const overMaxHours = [];
+    const nearMaxHours = [];
     const unavailable = [];
 
     // per-slot understaffing
@@ -241,6 +317,9 @@
       const hours = staffHours(state, mondayKey, st.id);
       if (hours > st.maxHours) {
         overMaxHours.push({ staffId: st.id, name: st.name, hours, maxHours: st.maxHours });
+      } else if (st.maxHours > 0 && hours >= 0.9 * st.maxHours) {
+        // warning, not a violation yet: within 10% of the weekly cap
+        nearMaxHours.push({ staffId: st.id, name: st.name, hours, maxHours: st.maxHours });
       }
     });
 
@@ -248,8 +327,9 @@
       understaffed,
       doubleBooked,
       overMaxHours,
+      nearMaxHours,
       unavailable,
-      totalIssues: understaffed.length + doubleBooked.length + overMaxHours.length + unavailable.length
+      totalIssues: understaffed.length + doubleBooked.length + overMaxHours.length + nearMaxHours.length + unavailable.length
     };
   }
 
@@ -447,6 +527,7 @@
     addStaff, removeStaff, findStaff, addRole, removeRole,
     assign, unassign, staffHours, weekHours,
     detectGaps,
+    laborCost, copyWeek, getSlotNote, setSlotNote, scheduleCSV,
     saveTemplate, renameTemplate, deleteTemplate, applyTemplate,
     requestSwap, acceptSwap, declineSwap, cancelSwap,
     printableSchedule, heuristicTips,

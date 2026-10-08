@@ -127,6 +127,90 @@ if(SP.deserialize('{}').ok) throw new Error('invalid store accepted');
 console.log('flow6 ok');
 " && ok "e2e flow 6: persistence shape round-trip" || bad "e2e flow 6: persistence shape round-trip"
 
+# Flow 7: wages persist and labor cost estimates a full week
+node -e "
+const SP=require('$LOGIC');
+const s=SP.createStore();
+const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40,wage:22}).staff.id;
+const b=SP.addStaff(s,{name:'Ben',role:'Cashier',maxHours:40,wage:15.5}).staff.id;
+SP.assign(s,'2026-09-28',0,0,a); SP.assign(s,'2026-09-28',1,0,a); SP.assign(s,'2026-09-28',1,0,b);
+const c=SP.laborCost(s,'2026-09-28');
+if(c.perStaff[a]!==176) throw new Error('Ava cost wrong: '+c.perStaff[a]);
+if(c.perStaff[b]!==62) throw new Error('Ben cost wrong: '+c.perStaff[b]);
+if(c.total!==238) throw new Error('total wrong: '+c.total);
+const d=SP.deserialize(SP.serialize(s));
+if(d.state.staff.find(x=>x.id===a).wage!==22) throw new Error('wage lost in persistence');
+console.log('flow7 ok');
+" && ok "e2e flow 7: wages persist, labor cost estimates the week" || bad "e2e flow 7: wages persist, labor cost estimates the week"
+
+# Flow 8: repeat last week copies assignments + notes, skips departed staff
+node -e "
+const SP=require('$LOGIC');
+const s=SP.createStore();
+const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40}).staff.id;
+const b=SP.addStaff(s,{name:'Ben',role:'Cashier',maxHours:40}).staff.id;
+SP.assign(s,'2026-09-28',0,0,a); SP.assign(s,'2026-09-28',2,1,b);
+SP.setSlotNote(s,'2026-09-28',0,0,'Training week');
+const r=SP.copyWeek(s,'2026-09-28','2026-10-05');
+if(!r.ok||r.copied!==2) throw new Error('copy failed: '+JSON.stringify(r));
+if(!SP.getSlot(s,'2026-10-05',0,0).some(x=>x.staffId===a)) throw new Error('slot not copied');
+if(SP.getSlotNote(s,'2026-10-05',0,0)!=='Training week') throw new Error('note not copied');
+SP.removeStaff(s,b);
+const r2=SP.copyWeek(s,'2026-09-28','2026-10-12');
+if(r2.copied!==1) throw new Error('departed staff not skipped: '+r2.copied);
+if(SP.getSlot(s,'2026-09-28',0,0).length!==1) throw new Error('source week mutated');
+console.log('flow8 ok');
+" && ok "e2e flow 8: repeat last week copies notes, skips departed staff" || bad "e2e flow 8: repeat last week copies notes, skips departed staff"
+
+# Flow 9: slot note lifecycle on a live week
+node -e "
+const SP=require('$LOGIC');
+const s=SP.createStore();
+if(SP.getSlotNote(s,'2026-09-28',3,2)!=='') throw new Error('fresh slot should have no note');
+SP.setSlotNote(s,'2026-09-28',3,2,'  Holiday rush  ');
+if(SP.getSlotNote(s,'2026-09-28',3,2)!=='Holiday rush') throw new Error('note not trimmed/stored');
+SP.setSlotNote(s,'2026-09-28',3,2,'');
+if(SP.getSlotNote(s,'2026-09-28',3,2)!=='') throw new Error('note not cleared');
+const d=SP.deserialize(SP.serialize(s));
+if(SP.getSlotNote(d.state,'2026-09-28',3,2)!=='') throw new Error('notes should persist only when set');
+console.log('flow9 ok');
+" && ok "e2e flow 9: slot note set/get/clear" || bad "e2e flow 9: slot note set/get/clear"
+
+# Flow 10: near-max warning appears in gaps, over-max does not double-count
+node -e "
+const SP=require('$LOGIC');
+const s=SP.createStore();
+const c=SP.addStaff(s,{name:'Cara',role:'Cook',maxHours:40}).staff.id;
+for(let d=0;d<7;d++) SP.assign(s,'2026-09-28',d,0,c);   // 28h
+SP.assign(s,'2026-09-28',0,1,c); SP.assign(s,'2026-09-28',1,1,c); // 36h total
+let g=SP.detectGaps(s,'2026-09-28');
+if(!g.nearMaxHours.some(n=>n.staffId===c&&n.hours===36)) throw new Error('near-max missing');
+if(g.overMaxHours.some(o=>o.staffId===c)) throw new Error('double-flagged as over-max');
+const before=g.totalIssues;
+SP.assign(s,'2026-09-28',2,1,c); SP.assign(s,'2026-09-28',3,1,c); // 44h > 40h
+g=SP.detectGaps(s,'2026-09-28');
+if(!g.overMaxHours.some(o=>o.staffId===c)) throw new Error('over-max missing');
+if(g.nearMaxHours.some(n=>n.staffId===c)) throw new Error('still near-max after exceeding');
+if(g.totalIssues<=before) throw new Error('issue count did not grow');
+console.log('flow10 ok');
+" && ok "e2e flow 10: near-max warning graduates to over-max" || bad "e2e flow 10: near-max warning graduates to over-max"
+
+# Flow 11: schedule CSV covers every assignment with day/date/shift/staff/role/hours
+node -e "
+const SP=require('$LOGIC');
+const s=SP.createStore();
+const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40}).staff.id;
+const b=SP.addStaff(s,{name:'Ben',role:'Cashier',maxHours:40}).staff.id;
+SP.assign(s,'2026-09-28',0,0,a,'Manager'); SP.assign(s,'2026-09-28',0,0,b,'Cashier'); SP.assign(s,'2026-09-28',6,2,b,'Cashier');
+const csv=SP.scheduleCSV(s,'2026-09-28');
+const lines=csv.split('\n');
+if(lines.length!==4) throw new Error('want header + 3 rows, got '+lines.length);
+const body=lines.slice(1).join('\n');
+if(body.indexOf('\"Monday\",\"2026-09-28\",\"Morning\",\"Ava\",\"Manager\",\"4\"')<0) throw new Error('Ava row wrong');
+if(body.indexOf('\"Sunday\",\"2026-10-04\",\"Evening\",\"Ben\"')<0) throw new Error('Ben Sunday row wrong');
+console.log('flow11 ok');
+" && ok "e2e flow 11: schedule CSV covers every assignment" || bad "e2e flow 11: schedule CSV covers every assignment"
+
 echo "----"
 echo "e2e: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

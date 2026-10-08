@@ -4,7 +4,12 @@ A free, single-page static web app for small teams to build weekly staff schedul
 
 ## What it does
 
-- **Staff roster** — add/remove team members with name, role (editable role list), weekly availability, max hours/week, and optional phone.
+- **Staff roster** — add/remove team members with name, role (editable role list), weekly availability, max hours/week, optional hourly wage, and optional phone.
+- **Labor-cost estimate** — the ops-wall stat strip shows the week's estimated labor cost from each staffer's wage × scheduled hours.
+- **Repeat last week** — clone the previous week's assignments (and shift notes) into the current week in one click.
+- **Shift notes** — attach a short note to any slot (holiday rush, training shift…) via the assign dialog; notes print/export with the schedule.
+- **Near-max-hours warnings** — staff within 10% of their weekly cap are flagged in the coverage panel before they cross it.
+- **Schedule CSV export** — download the week's day/date/shift/staff/role/hours as a CSV to share with the team.
 - **Weekly schedule grid** — 7 days × 3 shifts (Morning / Afternoon / Evening). Navigate weeks, click any slot to assign staff.
 - **Coverage-gap detector** — flags understaffed slots (configurable required headcount per role, e.g. 1 manager + 2 staff each morning), double-booked staff (two shifts in one day), staff over their max weekly hours, and assignments on unavailable days. A red "coverage issues" panel shows counts.
 - **Shift templates** — save the current week's layout as a named template, apply it to any week, rename or delete templates.
