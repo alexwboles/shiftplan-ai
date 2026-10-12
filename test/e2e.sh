@@ -211,6 +211,39 @@ if(body.indexOf('\"Sunday\",\"2026-10-04\",\"Evening\",\"Ben\"')<0) throw new Er
 console.log('flow11 ok');
 " && ok "e2e flow 11: schedule CSV covers every assignment" || bad "e2e flow 11: schedule CSV covers every assignment"
 
+# Flow 12: time-off -> gap flag -> auto-fill -> overtime premium, end to end
+node -e "
+const SP=require('$LOGIC');
+const s=SP.createStore();
+const ava=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:44,wage:20,availability:[0,1,2,3,4]}).staff.id;
+const ben=SP.addStaff(s,{name:'Ben',role:'Cashier',maxHours:40,wage:15,availability:[0,1,2,3,4]}).staff.id;
+// Ava takes Monday off, but is scheduled anyway -> coverage flags it as time-off
+const r=SP.requestTimeOff(s,{staffId:ava,date:'2026-09-28',reason:'dentist'});
+if(!r.ok) throw new Error('time-off request failed');
+SP.assign(s,'2026-09-28',0,0,ava);
+let g=SP.detectGaps(s,'2026-09-28');
+if(!g.unavailable.some(u=>u.staffId===ava&&u.timeOff)) throw new Error('time-off assignment not flagged');
+// Auto-fill: Monday morning still needs 1 Manager + 2 Any; Ava is off -> Ben (Cashier) fills an 'Any' slot
+const sg=SP.suggestCoverage(s,'2026-09-28');
+if(sg.some(x=>x.staffId===ava&&x.day===0)) throw new Error('suggested someone on time off');
+const anySlot=sg.find(x=>x.day===0&&x.role==='Any');
+if(!anySlot||anySlot.staffId!==ben) throw new Error('Ben should fill a Monday Any slot: '+JSON.stringify(anySlot));
+const applied=SP.applySuggestions(s,'2026-09-28',sg);
+if(applied.applied!==sg.length) throw new Error('not all suggestions applied');
+// Heavy week for Ben -> overtime premium appears
+for(let d=1;d<5;d++){ for(let sh=0;sh<3;sh++){ SP.assign(s,'2026-09-28',d,sh,ben); } }
+const ot=SP.overtimeReport(s,'2026-09-28',40);
+const benOt=ot.find(o=>o.staffId===ben);
+if(!benOt) throw new Error('Ben overtime missing: '+JSON.stringify(ot));
+if(benOt.overtimeHours<=0) throw new Error('overtime hours should be positive');
+if(Math.abs(benOt.premium-benOt.overtimeHours*15*0.5)>0.01) throw new Error('premium math: '+JSON.stringify(benOt));
+// Old saves without timeOff still deserialize
+const old={version:'1.0.0',staff:[],roles:['Manager'],shiftHours:{Morning:4},requirements:{},weeks:{},templates:[],swaps:[],settings:{}};
+const ds=SP.deserialize(JSON.stringify(old));
+if(!ds.ok||!Array.isArray(ds.state.timeOff)) throw new Error('deserialize should default timeOff');
+console.log('flow12 ok');
+" && ok "e2e flow 12: time-off -> flagged -> auto-filled -> overtime premium" || bad "e2e flow 12: time-off/auto-fill/overtime"
+
 echo "----"
 echo "e2e: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -112,9 +112,47 @@ node_assert "slot note trims and caps length" \
 node_assert "scheduleCSV exports header + assignment rows" \
   "(()=>{const s=SP.createStore();const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40});SP.assign(s,'2026-09-28',0,0,a.staff.id,'Manager');const csv=SP.scheduleCSV(s,'2026-09-28');const lines=csv.split('\n');return lines.length===2&&lines[0].indexOf('\"Day\",\"Date\",\"Shift\",\"Staff\",\"Role\",\"Hours\"')===0&&lines[1].indexOf('\"Ava\"')>0&&lines[1].indexOf('Monday')>0;})()"
 
-# new UI hooks exist
+# new UI hooks exist (incl. time-off card + fill-gaps button)
 node_assert "index.html has new UI hooks" \
-  "(()=>{const fs=require('fs');const h=fs.readFileSync(require('path').join('$DIR'.replace(/\\$/,''),'index.html'),'utf8');return ['btn-copy-week','btn-export-csv','sf-wage','ad-note'].every(id=>h.includes('id=\"'+id+'\"'));})()"
+  "(()=>{const fs=require('fs');const h=fs.readFileSync(require('path').join('$DIR'.replace(/\\$/,''),'index.html'),'utf8');return ['btn-copy-week','btn-export-csv','sf-wage','ad-note','btn-fill-gaps','timeoff-form','to-staff','to-date','timeoff-list'].every(id=>h.includes('id=\"'+id+'\"'));})()"
+
+# time-off management
+node_assert "requestTimeOff validates staff + date" \
+  "SP.requestTimeOff(SP.createStore(),{staffId:'nope',date:'2026-10-12'}).ok===false"
+node_assert "requestTimeOff records entry" \
+  "(()=>{const s=SP.createStore();const id=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40}).staff.id;const r=SP.requestTimeOff(s,{staffId:id,date:'2026-10-12',reason:'vacation'});return r.ok&&r.entry.reason==='vacation'&&SP.isOnTimeOff(s,id,'2026-10-12')&&!SP.isOnTimeOff(s,id,'2026-10-13');})()"
+node_assert "requestTimeOff rejects duplicates + bad dates" \
+  "(()=>{const s=SP.createStore();const id=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40}).staff.id;SP.requestTimeOff(s,{staffId:id,date:'2026-10-12'});return !SP.requestTimeOff(s,{staffId:id,date:'2026-10-12'}).ok&&!SP.requestTimeOff(s,{staffId:id,date:'nope'}).ok;})()"
+node_assert "cancelTimeOff removes entry" \
+  "(()=>{const s=SP.createStore();const id=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40}).staff.id;const r=SP.requestTimeOff(s,{staffId:id,date:'2026-10-12'});return SP.cancelTimeOff(s,r.entry.id).ok&&!SP.isOnTimeOff(s,id,'2026-10-12');})()"
+node_assert "timeOff flagged in detectGaps as timeOff unavailable" \
+  "(()=>{const s=SP.createStore();const id=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40,availability:[0]}).staff.id;SP.assign(s,'2026-09-28',0,0,id);SP.requestTimeOff(s,{staffId:id,date:'2026-09-28'});const g=SP.detectGaps(s,'2026-09-28');return g.unavailable.some(u=>u.staffId===id&&u.timeOff===true);})()"
+node_assert "weekTimeOff lists the week" \
+  "(()=>{const s=SP.createStore();const id=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40}).staff.id;SP.requestTimeOff(s,{staffId:id,date:'2026-10-01'});SP.requestTimeOff(s,{staffId:id,date:'2026-10-20'});const w=SP.weekTimeOff(s,'2026-09-28');return w.length===1&&w[0].date==='2026-10-01';})()"
+node_assert "removeStaff drops time-off entries" \
+  "(()=>{const s=SP.createStore();const id=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40}).staff.id;SP.requestTimeOff(s,{staffId:id,date:'2026-10-12'});SP.removeStaff(s,id);return s.timeOff.length===0;})()"
+
+# auto-fill coverage suggestions
+node_assert "suggestCoverage proposes eligible staff, fewest hours first" \
+  "(()=>{const s=SP.createStore();const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40,availability:[0,1]}).staff.id;const c=SP.addStaff(s,{name:'Cara',role:'Manager',maxHours:40,availability:[0,1]}).staff.id;SP.assign(s,'2026-09-28',1,0,a);const sg=SP.suggestCoverage(s,'2026-09-28');const mon=sg.find(x=>x.day===0&&x.shift===0&&x.role==='Manager');return sg.length>0&&mon&&mon.staffId===c;})()"
+node_assert "suggestCoverage skips time-off staff" \
+  "(()=>{const s=SP.createStore();const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40,availability:[0]}).staff.id;SP.requestTimeOff(s,{staffId:a,date:'2026-09-28'});const sg=SP.suggestCoverage(s,'2026-09-28');return !sg.some(x=>x.day===0&&x.staffId===a);})()"
+node_assert "suggestCoverage never double-books a day" \
+  "(()=>{const s=SP.createStore();const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40,availability:[0]}).staff.id;const sg=SP.suggestCoverage(s,'2026-09-28');const days={};for(const x of sg){if(x.staffId===a){if(days[x.day])return false;days[x.day]=1;}}return true;})()"
+node_assert "applySuggestions fills slots" \
+  "(()=>{const s=SP.createStore();const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40,availability:[0]}).staff.id;const sg=SP.suggestCoverage(s,'2026-09-28');const r=SP.applySuggestions(s,'2026-09-28',sg);return r.applied===sg.length&&r.skipped===0&&SP.getSlot(s,'2026-09-28',0,0).length>0;})()"
+
+# overtime report
+node_assert "overtimeReport flags past-threshold staff with premium" \
+  "(()=>{const s=SP.createStore();const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:60,wage:20}).staff.id;for(let d=0;d<6;d++)for(let sh=0;sh<2;sh++)SP.assign(s,'2026-09-28',d,sh,a);const ot=SP.overtimeReport(s,'2026-09-28',40);return ot.length===1&&ot[0].overtimeHours===8&&ot[0].premium===80;})()"
+node_assert "overtimeReport empty under threshold" \
+  "(()=>{const s=SP.createStore();SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:40,wage:20});return SP.overtimeReport(s,'2026-09-28',40).length===0;})()"
+node_assert "overtimeReport custom threshold" \
+  "(()=>{const s=SP.createStore();const a=SP.addStaff(s,{name:'Ava',role:'Manager',maxHours:60,wage:10}).staff.id;for(let d=0;d<5;d++)SP.assign(s,'2026-09-28',d,0,a);const ot=SP.overtimeReport(s,'2026-09-28',16);return ot.length===1&&ot[0].overtimeHours===4&&ot[0].premium===20;})()"
+
+# app.js wires the new features
+node_assert "app.js wires time-off + fill + overtime" \
+  "(()=>{const fs=require('fs');const a=fs.readFileSync('$DIR/js/app.js','utf8');return ['renderTimeOff','btn-fill-gaps','timeoff-form','suggestCoverage','applySuggestions','overtimeReport','requestTimeOff'].every(fn=>a.includes(fn));})()"
 
 # no rounded rectangles
 node_assert "no rounded rectangles in css" \

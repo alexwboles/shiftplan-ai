@@ -55,6 +55,7 @@
       weeks: {},      // mondayKey -> { slots: { "dayIdx-shiftIdx": [ {staffId, role} ] } }
       templates: [],  // { id, name, savedAt, slots }
       swaps: [],      // { id, staffId, week, day, shift, targetStaffId, status, acceptedBy, createdAt }
+      timeOff: [],    // { id, staffId, date: "YYYY-MM-DD", reason }
       settings: { openaiKey: "" }
     };
   }
@@ -135,6 +136,8 @@
     state.swaps.forEach(s => {
       if (s.status === "open" && (s.staffId === staffId || s.targetStaffId === staffId)) s.status = "declined";
     });
+    // drop their time-off entries
+    state.timeOff = state.timeOff.filter(t => t.staffId !== staffId);
     return { ok: true };
   }
 
@@ -307,10 +310,12 @@
         if (worked.length > 1) {
           doubleBooked.push({ staffId: st.id, name: st.name, day: d, shifts: worked });
         }
-        // unavailable day
+        // unavailable day (weekly pattern) or approved time off (specific date)
         worked.forEach(s => {
           if (!st.availability.includes(d)) {
-            unavailable.push({ staffId: st.id, name: st.name, day: d, shift: s });
+            unavailable.push({ staffId: st.id, name: st.name, day: d, shift: s, timeOff: false });
+          } else if (isOnTimeOff(state, st.id, dayLabel(mondayKey, d))) {
+            unavailable.push({ staffId: st.id, name: st.name, day: d, shift: s, timeOff: true });
           }
         });
       }
@@ -331,6 +336,93 @@
       unavailable,
       totalIssues: understaffed.length + doubleBooked.length + overMaxHours.length + nearMaxHours.length + unavailable.length
     };
+  }
+
+  // ---------- Auto-fill coverage suggestions ----------
+  // suggestCoverage(state, mondayKey) -> [{ day, shift, role, staffId, name }]
+  // One suggestion per understaffed slot: the eligible staffer with the fewest
+  // scheduled hours (fairness). Eligible = available that weekday, not on time
+  // off, not already working that day, stays under max hours, and matches the
+  // required role (or any role when the requirement is "Any").
+  function suggestCoverage(state, mondayKey) {
+    const gaps = detectGaps(state, mondayKey);
+    const hours = weekHours(state, mondayKey);
+    const out = [];
+    const plannedHours = {};  // staffId -> extra hours from suggestions already made
+    const plannedDays = {};   // staffId -> { dayIdx: true } already suggested that day
+    const slotTaken = {};     // "day-shift" -> { staffId: true } suggested for that slot
+    gaps.understaffed.forEach(u => {
+      const date = dayLabel(mondayKey, u.day);
+      const shiftHrs = state.shiftHours[SHIFTS[u.shift]] || 0;
+      const sk = u.day + "-" + u.shift;
+      const cands = state.staff.filter(st => {
+        if (!st.availability.includes(u.day)) return false;
+        if (isOnTimeOff(state, st.id, date)) return false;
+        if (u.role !== "Any" && st.role !== u.role) return false;
+        if (getSlot(state, mondayKey, u.day, u.shift).some(a => a.staffId === st.id)) return false;
+        if (slotTaken[sk] && slotTaken[sk][st.id]) return false;
+        // no double-booking: at most one shift per day, including suggestions
+        let worked = 0;
+        for (let s = 0; s < 3; s++) {
+          if (getSlot(state, mondayKey, u.day, s).some(a => a.staffId === st.id)) worked++;
+        }
+        if (worked > 0) return false;
+        if (plannedDays[st.id] && plannedDays[st.id][u.day]) return false;
+        const total = (hours[st.id] || 0) + (plannedHours[st.id] || 0) + shiftHrs;
+        if (total > st.maxHours) return false;
+        return true;
+      });
+      if (!cands.length) return;
+      cands.sort((a, b) => {
+        const ha = (hours[a.id] || 0) + (plannedHours[a.id] || 0);
+        const hb = (hours[b.id] || 0) + (plannedHours[b.id] || 0);
+        if (ha !== hb) return ha - hb;
+        return a.name.localeCompare(b.name);
+      });
+      const pick = cands[0];
+      plannedHours[pick.id] = (plannedHours[pick.id] || 0) + shiftHrs;
+      if (!plannedDays[pick.id]) plannedDays[pick.id] = {};
+      plannedDays[pick.id][u.day] = true;
+      if (!slotTaken[sk]) slotTaken[sk] = {};
+      slotTaken[sk][pick.id] = true;
+      out.push({ day: u.day, shift: u.shift, role: u.role, staffId: pick.id, name: pick.name });
+    });
+    return out;
+  }
+
+  // applySuggestions(state, mondayKey, suggestions) -> { applied, skipped }.
+  function applySuggestions(state, mondayKey, suggestions) {
+    let applied = 0, skipped = 0;
+    (suggestions || []).forEach(sg => {
+      const role = sg.role === "Any" ? (findStaff(state, sg.staffId) || {}).role : sg.role;
+      const r = assign(state, mondayKey, sg.day, sg.shift, sg.staffId, role);
+      if (r.ok) applied++; else skipped++;
+    });
+    return { applied, skipped };
+  }
+
+  // ---------- Overtime report ----------
+  // overtimeReport(state, mondayKey, thresholdHours) — staff scheduled past the
+  // threshold (default 40h): overtime hours + the 0.5x premium over straight time.
+  function overtimeReport(state, mondayKey, thresholdHours) {
+    const threshold = thresholdHours === undefined || thresholdHours === null
+      ? 40 : Math.max(0, Number(thresholdHours) || 0);
+    const hours = weekHours(state, mondayKey);
+    const rows = [];
+    state.staff.forEach(st => {
+      const h = hours[st.id] || 0;
+      if (h > threshold) {
+        const wage = Number(st.wage) || 0;
+        const ot = Math.round((h - threshold) * 100) / 100;
+        rows.push({
+          staffId: st.id, name: st.name, hours: h, threshold: threshold,
+          overtimeHours: ot, wage: wage,
+          premium: Math.round(ot * wage * 0.5 * 100) / 100
+        });
+      }
+    });
+    rows.sort((a, b) => b.overtimeHours - a.overtimeHours);
+    return rows;
   }
 
   // ---------- Templates ----------
@@ -446,6 +538,45 @@
     return { ok: true };
   }
 
+  // ---------- Time off ----------
+  // Date-specific time off: { id, staffId, date: "YYYY-MM-DD", reason }.
+  // Unlike weekly availability, this covers one-off days (vacation, sick, appointments).
+  function validDateStr(s) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s || "")) return false;
+    const d = new Date(s + "T12:00:00");
+    return !isNaN(d.getTime());
+  }
+
+  function requestTimeOff(state, input) {
+    const { staffId, date, reason } = input || {};
+    const staff = findStaff(state, staffId);
+    if (!staff) return { ok: false, error: "Staff not found." };
+    if (!validDateStr(date)) return { ok: false, error: "Date must be YYYY-MM-DD." };
+    const dup = state.timeOff.find(t => t.staffId === staffId && t.date === date);
+    if (dup) return { ok: false, error: "Time off already recorded for that date." };
+    const entry = { id: uid(), staffId, date, reason: (reason || "").trim().slice(0, 80), createdAt: new Date().toISOString() };
+    state.timeOff.push(entry);
+    return { ok: true, entry };
+  }
+
+  function cancelTimeOff(state, id) {
+    const before = state.timeOff.length;
+    state.timeOff = state.timeOff.filter(t => t.id !== id);
+    return { ok: state.timeOff.length < before };
+  }
+
+  function isOnTimeOff(state, staffId, date) {
+    return state.timeOff.some(t => t.staffId === staffId && t.date === date);
+  }
+
+  // Time-off entries inside the week starting mondayKey, soonest first.
+  function weekTimeOff(state, mondayKey) {
+    const start = mondayKey, end = dayLabel(mondayKey, 6);
+    return state.timeOff
+      .filter(t => t.date >= start && t.date <= end)
+      .sort((a, b) => a.date < b.date ? -1 : (a.date > b.date ? 1 : 0));
+  }
+
   // ---------- Printable shape ----------
   function printableSchedule(state, mondayKey) {
     const rows = [];
@@ -515,6 +646,7 @@
     merged.weeks = parsed.weeks || {};
     merged.templates = Array.isArray(parsed.templates) ? parsed.templates : [];
     merged.swaps = Array.isArray(parsed.swaps) ? parsed.swaps : [];
+    merged.timeOff = Array.isArray(parsed.timeOff) ? parsed.timeOff : [];
     merged.settings = { ...(parsed.settings || {}) };
     return { ok: true, state: merged };
   }
@@ -530,6 +662,8 @@
     laborCost, copyWeek, getSlotNote, setSlotNote, scheduleCSV,
     saveTemplate, renameTemplate, deleteTemplate, applyTemplate,
     requestSwap, acceptSwap, declineSwap, cancelSwap,
+    requestTimeOff, cancelTimeOff, isOnTimeOff, weekTimeOff,
+    suggestCoverage, applySuggestions, overtimeReport,
     printableSchedule, heuristicTips,
     serialize, deserialize
   };

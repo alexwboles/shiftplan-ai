@@ -84,7 +84,9 @@
       lines.push(`Warning: ${n.name} at ${n.hours}h of ${n.maxHours}h max — approaching the weekly limit.`);
     });
     g.unavailable.forEach(u => {
-      lines.push(`Unavailable: ${u.name} assigned ${SP.DAYS[u.day]} ${SP.SHIFTS[u.shift]} but is off that day.`);
+      lines.push(u.timeOff
+        ? `Time off: ${u.name} is on approved time off but scheduled ${SP.DAYS[u.day]} ${SP.SHIFTS[u.shift]} — reassign.`
+        : `Unavailable: ${u.name} assigned ${SP.DAYS[u.day]} ${SP.SHIFTS[u.shift]} but is off that day.`);
     });
     return lines;
   }
@@ -146,13 +148,16 @@
     const hours = SP.weekHours(state, currentWeek);
     const totalHours = Object.values(hours).reduce((a, b) => a + b, 0);
     const cost = SP.laborCost(state, currentWeek);
+    const ot = SP.overtimeReport(state, currentWeek, 40);
+    const otTotal = ot.reduce((s, r) => s + r.premium, 0);
     const stats = $("ops-stats");
     if (stats) {
       stats.innerHTML =
         `<span><b>${totalShifts}</b> shifts</span>` +
         `<span><b>${totalHours}h</b> scheduled</span>` +
         `<span class="${openSlots ? "alert" : ""}"><b>${openSlots}</b> need coverage</span>` +
-        (cost.total > 0 ? `<span><b>$${cost.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> labor cost</span>` : "");
+        (cost.total > 0 ? `<span><b>$${cost.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> labor cost</span>` : "") +
+        (ot.length ? `<span class="alert"><b>$${otTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> overtime premium (${ot.length} staff)</span>` : "");
     }
   }
 
@@ -191,6 +196,23 @@
         }
       });
     });
+  }
+
+  // ---------- time off ----------
+  function renderTimeOff() {
+    $("to-staff").innerHTML = state.staff.map(st =>
+      `<option value="${st.id}">${escapeHtml(st.name)}</option>`).join("");
+    const list = SP.weekTimeOff(state, currentWeek);
+    $("timeoff-list").innerHTML = list.map(t => {
+      const st = SP.findStaff(state, t.staffId);
+      return `<li><div><strong>${escapeHtml(st ? st.name : "?")}</strong> ` +
+        `<span class="meta">${escapeHtml(t.date)}${t.reason ? " — " + escapeHtml(t.reason) : ""}</span></div>` +
+        `<div class="actions"><button class="btn small danger" data-to-cancel="${t.id}">Cancel</button></div></li>`;
+    }).join("") || `<li class="meta">No time off this week.</li>`;
+    $("timeoff-list").querySelectorAll("[data-to-cancel]").forEach(b => b.addEventListener("click", () => {
+      SP.cancelTimeOff(state, b.dataset.toCancel);
+      save(); renderAll();
+    }));
   }
 
   // ---------- templates ----------
@@ -325,7 +347,7 @@
   // ---------- render all ----------
   function renderAll() {
     renderWeekLabel(); renderGrid(); renderCoverage();
-    renderStaffForm(); renderStaffList();
+    renderStaffForm(); renderStaffList(); renderTimeOff();
     renderTemplates(); renderSwaps();
   }
 
@@ -371,6 +393,31 @@
       const r = SP.addRole(state, $("new-role").value);
       if (!r.ok) { alert(r.error); return; }
       $("new-role").value = ""; save(); renderAll();
+    });
+
+    // one-click gap filling: suggest eligible staff for understaffed slots, then apply
+    $("btn-fill-gaps").addEventListener("click", () => {
+      const suggestions = SP.suggestCoverage(state, currentWeek);
+      if (!suggestions.length) { alert("No fillable gaps — every open slot is missing an eligible staffer (check availability and max hours)."); return; }
+      const preview = suggestions.map(s =>
+        `${SP.DAYS[s.day]} ${SP.SHIFTS[s.shift]} (${s.role}): ${s.name}`).join("\n");
+      if (!confirm(`Fill ${suggestions.length} open slot${suggestions.length === 1 ? "" : "s"}?\n\n${preview}`)) return;
+      const r = SP.applySuggestions(state, currentWeek, suggestions);
+      save(); renderAll();
+      alert(`Applied ${r.applied} assignment${r.applied === 1 ? "" : "s"}${r.skipped ? ` (${r.skipped} skipped)` : ""}.`);
+    });
+
+    // time-off form
+    $("timeoff-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const r = SP.requestTimeOff(state, {
+        staffId: $("to-staff").value,
+        date: $("to-date").value,
+        reason: $("to-reason").value
+      });
+      if (!r.ok) { alert(r.error); return; }
+      $("to-date").value = ""; $("to-reason").value = "";
+      save(); renderAll();
     });
 
     $("btn-save-tpl").addEventListener("click", () => {

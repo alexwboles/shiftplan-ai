@@ -32,6 +32,7 @@
     <div class="issues-head">
       <span class="issues-icon" aria-hidden="true">!</span>
       <h2>Coverage issues <span id="issue-count" class="badge"></span></h2>
+      <button id="btn-fill-gaps" class="btn brass small">Fill open slots</button>
     </div>
     <ul id="issue-list"></ul>
   </section>
@@ -73,6 +74,24 @@
         <button id="btn-add-role" class="btn ghost" type="button">Add role</button>
       </div>
       <ul id="staff-list" class="list"></ul>
+    </section>
+
+    <!-- Time off -->
+    <section class="card">
+      <p class="kicker">Absences</p>
+      <h2>Time off</h2>
+      <p class="muted small">One-off days off (vacation, sick, appointments) — flagged in the coverage panel if someone is scheduled.</p>
+      <form id="timeoff-form" class="form">
+        <div class="frow">
+          <select id="to-staff" aria-label="Staff member"></select>
+          <input id="to-date" type="date" aria-label="Time-off date">
+        </div>
+        <div class="frow">
+          <input id="to-reason" placeholder="Reason (optional)" maxlength="80" aria-label="Reason">
+          <button class="btn brass" type="submit">Add time off</button>
+        </div>
+      </form>
+      <ul id="timeoff-list" class="list"></ul>
     </section>
 
     <!-- Templates -->
