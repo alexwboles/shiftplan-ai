@@ -231,3 +231,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   .list > li { flex-direction: column; align-items: stretch; }
   .list .actions { justify-content: flex-start; flex-wrap: wrap; }
 }
+
+/* ---------- cost by day + hours balance ---------- */
+.costcard h3 { font-size: .95rem; margin: 0 0 .5rem; }
+.cost-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+@media (max-width: 900px) { .cost-cols { grid-template-columns: 1fr; } }
+table.costday { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.costday th, table.costday td { text-align: left; padding: .35rem .4rem; border-bottom: 1px solid var(--line); }
+.costbar { display: inline-block; width: 70px; height: 8px; background: var(--line); margin-right: .5rem; vertical-align: middle; }
+.costbar i { display: block; height: 100%; background: #0f766e; }
+.bal-list { list-style: none; margin: 0; padding: 0; }
+.bal-list li { display: flex; gap: .7rem; align-items: baseline; padding: .4rem 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
+.bal-name { font-weight: 700; }
+.bal-h { margin-left: auto; font-variant-numeric: tabular-nums; }
+.bal-note { font-size: .78rem; color: var(--muted); }
+.bal-list li.bal-over .bal-note { color: #b91c1c; font-weight: 700; }
+.bal-list li.bal-near .bal-note { color: #b45309; font-weight: 700; }
+.bal-list li.bal-under .bal-note { color: #0f766e; }

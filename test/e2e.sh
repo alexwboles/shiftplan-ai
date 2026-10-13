@@ -244,6 +244,34 @@ if(!ds.ok||!Array.isArray(ds.state.timeOff)) throw new Error('deserialize should
 console.log('flow12 ok');
 " && ok "e2e flow 12: time-off -> flagged -> auto-filled -> overtime premium" || bad "e2e flow 12: time-off/auto-fill/overtime"
 
+node -e "
+const SP=require('./js/logic.js');
+const s=SP.createStore();
+s.staff=[
+  {id:'m',name:'Maya',maxHours:40,wage:18,availability:[0,1,2,3,4,5,6]},
+  {id:'t',name:'Tom',maxHours:24,wage:16,availability:[0,1,2,3,4,5,6]}];
+// Maya: the classic clopening — Friday evening into Saturday morning
+SP.assign(s,'2026-10-12',4,2,'m','Manager');
+SP.assign(s,'2026-10-12',5,0,'m','Manager');
+// Tom: one quiet shift, clearly under-utilized
+SP.assign(s,'2026-10-12',1,1,'t','Cashier');
+const rv=SP.restViolations(s,'2026-10-12');
+if(rv.length!==1||rv[0].name!=='Maya'||rv[0].dayA!==4||rv[0].shiftB!=='Morning')
+  throw new Error('clopening: '+JSON.stringify(rv));
+const cd=SP.laborCostByDay(s,'2026-10-12');
+const fri=cd[4], sat=cd[5], tue=cd[1];
+if(fri.cost!==72||sat.cost!==72||tue.cost!==64) throw new Error('day costs: '+JSON.stringify([fri.cost,sat.cost,tue.cost]));
+if(Math.abs(cd.reduce((t,x)=>t+x.cost,0)-SP.laborCost(s,'2026-10-12').total)>0.01)
+  throw new Error('day costs must sum to week total');
+const hb=SP.hoursBalance(s,'2026-10-12');
+const maya=hb.find(x=>x.staffId==='m'), tom=hb.find(x=>x.staffId==='t');
+if(maya.scheduled!==8||maya.status!=='under') throw new Error('maya: '+JSON.stringify(maya));
+if(tom.scheduled!==4||tom.status!=='under'||tom.pct!==17) throw new Error('tom: '+JSON.stringify(tom));
+// detectGaps is untouched by the new warning category
+if(typeof SP.detectGaps(s,'2026-10-12').rest!=='undefined') throw new Error('detectGaps shape changed');
+console.log('flow13 ok');
+" && ok "e2e flow 13: clopening + cost-by-day + hours balance" || bad "e2e flow 13: sweep-2"
+
 echo "----"
 echo "e2e: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

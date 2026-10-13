@@ -195,6 +195,25 @@
     return out;
   }
 
+  // ---------- Rest violations (clopenings) ----------
+  // restViolations(state, mondayKey) -> [{ staffId, name, dayA, shiftA, dayB, shiftB }]
+  // Flags "clopenings": Evening shift on day d followed by Morning shift on
+  // day d+1 for the same staffer — the classic short-rest turnaround.
+  // Kept separate from detectGaps so it stays a warning, not an error.
+  function restViolations(state, mondayKey) {
+    const out = [];
+    state.staff.forEach(st => {
+      for (let d = 0; d < 6; d++) {
+        const eve = getSlot(state, mondayKey, d, 2).some(a => a.staffId === st.id);
+        const morn = getSlot(state, mondayKey, d + 1, 0).some(a => a.staffId === st.id);
+        if (eve && morn) {
+          out.push({ staffId: st.id, name: st.name, dayA: d, shiftA: "Evening", dayB: d + 1, shiftB: "Morning" });
+        }
+      }
+    });
+    return out;
+  }
+
   // ---------- Labor-cost estimate ----------
   // laborCost(state, mondayKey) -> { perStaff: {id: cost}, total } using each
   // staff member's hourly wage (staff without a wage contribute $0).
@@ -208,6 +227,45 @@
       total = Math.round((total + cost) * 100) / 100;
     });
     return { perStaff, total };
+  }
+
+  // laborCostByDay(state, mondayKey) -> [{ day, date, hours, cost }]
+  // Breaks the week's labor cost down per day so managers can see which
+  // days are the most expensive to staff.
+  function laborCostByDay(state, mondayKey) {
+    const out = [];
+    for (let d = 0; d < 7; d++) {
+      let hours = 0, cost = 0;
+      for (let s = 0; s < 3; s++) {
+        const h = state.shiftHours[SHIFTS[s]] || 0;
+        getSlot(state, mondayKey, d, s).forEach(a => {
+          hours += h;
+          const st = findStaff(state, a.staffId);
+          cost += h * (Number(st && st.wage) || 0);
+        });
+      }
+      out.push({
+        day: d, date: dayLabel(mondayKey, d),
+        hours: Math.round(hours * 100) / 100,
+        cost: Math.round(cost * 100) / 100
+      });
+    }
+    return out;
+  }
+
+  // hoursBalance(state, mondayKey) -> [{ staffId, name, scheduled, max, pct, status }]
+  // status: "over" | "near" (>=90% of cap) | "ok" | "under" (<50% of cap).
+  // The "under" flag surfaces staff who could fairly take more shifts.
+  function hoursBalance(state, mondayKey) {
+    return state.staff.map(st => {
+      const scheduled = staffHours(state, mondayKey, st.id);
+      const max = Number(st.maxHours) || 0;
+      const pct = max > 0 ? Math.round(scheduled / max * 100) : 0;
+      const status = scheduled > max && max > 0 ? "over"
+        : (max > 0 && scheduled >= 0.9 * max) ? "near"
+        : (max > 0 && scheduled < 0.5 * max) ? "under" : "ok";
+      return { staffId: st.id, name: st.name, scheduled, max, pct, status };
+    });
   }
 
   // ---------- Copy a week ----------
@@ -658,8 +716,8 @@
     createStore, getWeek, getSlot, slotKey,
     addStaff, removeStaff, findStaff, addRole, removeRole,
     assign, unassign, staffHours, weekHours,
-    detectGaps,
-    laborCost, copyWeek, getSlotNote, setSlotNote, scheduleCSV,
+    detectGaps, restViolations,
+    laborCost, laborCostByDay, hoursBalance, copyWeek, getSlotNote, setSlotNote, scheduleCSV,
     saveTemplate, renameTemplate, deleteTemplate, applyTemplate,
     requestSwap, acceptSwap, declineSwap, cancelSwap,
     requestTimeOff, cancelTimeOff, isOnTimeOff, weekTimeOff,

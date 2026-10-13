@@ -88,15 +88,20 @@
         ? `Time off: ${u.name} is on approved time off but scheduled ${SP.DAYS[u.day]} ${SP.SHIFTS[u.shift]} — reassign.`
         : `Unavailable: ${u.name} assigned ${SP.DAYS[u.day]} ${SP.SHIFTS[u.shift]} but is off that day.`);
     });
+    g.rest.forEach(r => {
+      lines.push(`Short rest: ${r.name} works Evening ${SP.DAYS[r.dayA]} then Morning ${SP.DAYS[r.dayB]} — a clopening. Consider reassigning.`);
+    });
     return lines;
   }
 
   function renderCoverage() {
     const g = SP.detectGaps(state, currentWeek);
+    g.rest = SP.restViolations(state, currentWeek);
+    const total = g.totalIssues + g.rest.length;
     const panel = $("coverage-panel");
-    if (g.totalIssues === 0) { panel.classList.add("hidden"); return; }
+    if (total === 0) { panel.classList.add("hidden"); return; }
     panel.classList.remove("hidden");
-    $("issue-count").textContent = g.totalIssues;
+    $("issue-count").textContent = total;
     $("issue-list").innerHTML = issueText(g).map(t => `<li>${escapeHtml(t)}</li>`).join("");
   }
 
@@ -344,9 +349,36 @@
       tips.map(t => `<li>${escapeHtml(t)}</li>`).join("");
   }
 
+  // ---------- cost by day + hours balance ----------
+  function renderCostBalance() {
+    const money = (n) => "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const byDay = SP.laborCostByDay(state, currentWeek);
+    const tb = $("cost-day-body");
+    if (tb) {
+      const maxCost = Math.max(1, ...byDay.map(x => x.cost));
+      tb.innerHTML = byDay.map(x => {
+        const w = Math.round(x.cost / maxCost * 100);
+        return `<tr><td>${SP.DAYS[x.day].slice(0, 3)}</td><td class="muted">${escapeHtml(x.date.slice(5))}</td>` +
+          `<td>${x.hours}h</td><td><div class="costbar"><i style="width:${w}%"></i></div>${money(x.cost)}</td></tr>`;
+      }).join("");
+    }
+    const hb = $("hours-balance");
+    if (hb) {
+      const rows = SP.hoursBalance(state, currentWeek);
+      hb.innerHTML = rows.length ? rows.map(r => {
+        const label = r.max > 0 ? `${r.scheduled}h / ${r.max}h` : `${r.scheduled}h`;
+        const note = r.status === "over" ? "over cap"
+          : r.status === "near" ? "near cap"
+          : r.status === "under" ? "could take more" : "balanced";
+        return `<li class="bal-${r.status}"><span class="bal-name">${escapeHtml(r.name)}</span>` +
+          `<span class="bal-h">${label}</span><span class="bal-note">${note}</span></li>`;
+      }).join("") : `<li class="muted">No staff on the roster yet.</li>`;
+    }
+  }
+
   // ---------- render all ----------
   function renderAll() {
-    renderWeekLabel(); renderGrid(); renderCoverage();
+    renderWeekLabel(); renderGrid(); renderCoverage(); renderCostBalance();
     renderStaffForm(); renderStaffList(); renderTimeOff();
     renderTemplates(); renderSwaps();
   }

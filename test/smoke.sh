@@ -158,6 +158,53 @@ node_assert "app.js wires time-off + fill + overtime" \
 node_assert "no rounded rectangles in css" \
   "(()=>{const fs=require('fs');const css=fs.readFileSync('$DIR/css/style.css','utf8');const bad=[...css.matchAll(/border-radius:\\s*([^;}]+)/g)].map(m=>m[1].trim()).filter(v=>!/^(0|50%|var\\(--radius\\))$/.test(v));return bad.length===0;})()"
 
+# sweep-2: clopening detection
+node_assert "restViolations flags evening->morning clopening" \
+  "(()=>{const SP=require('$DIR/js/logic.js');const s=SP.createStore();
+   s.staff=[{id:'a',name:'Jo',maxHours:40,wage:15,availability:[0,1,2,3,4,5,6]}];
+   SP.assign(s,'2026-10-12',0,2,'a','Cashier');
+   SP.assign(s,'2026-10-12',1,0,'a','Cashier');
+   const rv=SP.restViolations(s,'2026-10-12');
+   return rv.length===1&&rv[0].name==='Jo'&&rv[0].dayA===0&&rv[0].dayB===1;})()"
+node_assert "restViolations ignores morning->evening same day" \
+  "(()=>{const SP=require('$DIR/js/logic.js');const s=SP.createStore();
+   s.staff=[{id:'a',name:'Jo',maxHours:40,availability:[0,1,2,3,4,5,6]}];
+   SP.assign(s,'2026-10-12',3,0,'a','Cashier');
+   return SP.restViolations(s,'2026-10-12').length===0;})()"
+
+# sweep-2: labor cost by day
+node_assert "laborCostByDay breaks cost down per day" \
+  "(()=>{const SP=require('$DIR/js/logic.js');const s=SP.createStore();
+   s.staff=[{id:'a',name:'Jo',maxHours:40,wage:15,availability:[0,1,2,3,4,5,6]}];
+   SP.assign(s,'2026-10-12',0,2,'a','Cashier');
+   SP.assign(s,'2026-10-12',1,0,'a','Cashier');
+   const cd=SP.laborCostByDay(s,'2026-10-12');
+   const sum=cd.reduce((t,x)=>t+x.cost,0);
+   return cd.length===7&&cd[0].cost===60&&cd[0].hours===4&&cd[1].cost===60&&cd[2].cost===0&&
+     Math.abs(sum-SP.laborCost(s,'2026-10-12').total)<0.01;})()"
+
+# sweep-2: hours balance statuses
+node_assert "hoursBalance flags over/near/under" \
+  "(()=>{const SP=require('$DIR/js/logic.js');const s=SP.createStore();
+   s.staff=[
+     {id:'a',name:'Over',maxHours:8,wage:10,availability:[0,1,2,3,4,5,6]},
+     {id:'b',name:'Under',maxHours:40,wage:10,availability:[0,1,2,3,4,5,6]}];
+   SP.assign(s,'2026-10-12',0,0,'a','Cashier');SP.assign(s,'2026-10-12',0,1,'a','Cashier');SP.assign(s,'2026-10-12',0,2,'a','Cashier');
+   SP.assign(s,'2026-10-12',1,0,'b','Cashier');
+   const hb=SP.hoursBalance(s,'2026-10-12');
+   const a=hb.find(x=>x.staffId==='a'),b=hb.find(x=>x.staffId==='b');
+   return a.status==='over'&&a.scheduled===12&&b.status==='under'&&b.scheduled===4&&b.pct===10;})()"
+
+# sweep-2: UI wiring
+node_assert "sweep-2 UI wired (cost card + balance + clopen text)" \
+  "(()=>{const fs=require('fs');
+   const html=fs.readFileSync('$DIR/index.html','utf8');
+   const app=fs.readFileSync('$DIR/js/app.js','utf8');
+   const css=fs.readFileSync('$DIR/css/style.css','utf8');
+   return html.includes('cost-day-body')&&html.includes('hours-balance')&&
+     app.includes('restViolations')&&app.includes('laborCostByDay')&&app.includes('hoursBalance')&&
+     app.includes('clopening')&&css.includes('costbar')&&css.includes('bal-list');})()"
+
 echo "----"
 echo "smoke: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
