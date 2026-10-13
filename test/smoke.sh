@@ -205,6 +205,14 @@ node_assert "sweep-2 UI wired (cost card + balance + clopen text)" \
      app.includes('restViolations')&&app.includes('laborCostByDay')&&app.includes('hoursBalance')&&
      app.includes('clopening')&&css.includes('costbar')&&css.includes('bal-list');})()"
 
+node_assert "staff color coding + day totals (redesign 2026-10-13)" \
+  "(()=>{const fs=require('fs');
+   const app=fs.readFileSync('$DIR/js/app.js','utf8');
+   const css=fs.readFileSync('$DIR/css/style.css','utf8');
+   return app.includes('STAFF_PALETTE')&&app.includes('staffColor(a.staffId)')&&
+     app.includes('dayhrs')&&app.includes('staff-dot')&&
+     css.includes('.staff-dot')&&css.includes('.dayhrs');})()"
+
 echo "----"
 echo "smoke: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

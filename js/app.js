@@ -14,6 +14,24 @@
     { bg: "#f1e8d8", fg: "#8a5a18", bar: "#b45309" },
     { bg: "#e8eaee", fg: "#3f4753", bar: "#64748b" }
   ];
+  // Per-staff color coding (When I Work signature): deterministic by staff id,
+  // so the same person is always the same color on the grid.
+  const STAFF_PALETTE = [
+    { bg: "#e3ecfd", fg: "#1e40af", bar: "#2563eb" },
+    { bg: "#e6f7ee", fg: "#166534", bar: "#16a34a" },
+    { bg: "#fdf1de", fg: "#9a5b07", bar: "#d97706" },
+    { bg: "#fbe4ea", fg: "#9f1239", bar: "#e11d48" },
+    { bg: "#ede9fe", fg: "#5b21b6", bar: "#7c3aed" },
+    { bg: "#dcf5f5", fg: "#0e7490", bar: "#0891b2" },
+    { bg: "#f3ead9", fg: "#7c4a03", bar: "#b45309" },
+    { bg: "#e2e8f0", fg: "#334155", bar: "#475569" }
+  ];
+  function staffColor(staffId) {
+    let h = 0;
+    const s = String(staffId);
+    for (let i = 0; i < s.length; i++) h = ((h * 31) + s.charCodeAt(i)) >>> 0;
+    return STAFF_PALETTE[h % STAFF_PALETTE.length];
+  }
   function roleColor(role) {
     const i = Math.max(0, state.roles.indexOf(role));
     return ROLE_PALETTE[i % ROLE_PALETTE.length];
@@ -118,10 +136,19 @@
       const dt = new Date(mon); dt.setDate(dt.getDate() + d);
       const isToday = dt.getFullYear() === now.getFullYear() &&
         dt.getMonth() === now.getMonth() && dt.getDate() === now.getDate();
+      // Day totals: scheduled hours + open coverage slots (Deputy-style).
+      let dayHours = 0, dayGaps = 0;
+      for (let s2 = 0; s2 < SP.SHIFTS.length; s2++) {
+        const n = SP.getSlot(state, currentWeek, d, s2).length;
+        dayHours += n * (state.shiftHours[SP.SHIFTS[s2]] || 0);
+        if (gapSlots.has(d + "-" + s2)) dayGaps++;
+      }
       html += `<div class="daycol${isToday ? " today" : ""}">`;
       html += `<div class="dayhead"><span class="dow">${SP.DAYS[d].slice(0, 3)}</span>` +
         `<span class="dnum">${dt.getDate()}</span>` +
-        (isToday ? `<span class="todaypill">Today</span>` : "") + `</div>`;
+        (isToday ? `<span class="todaypill">Today</span>` : "") +
+        `<span class="dayhrs">${dayHours}h</span>` +
+        (dayGaps ? `<span class="daygap">${dayGaps} open</span>` : "") + `</div>`;
       for (let s = 0; s < SP.SHIFTS.length; s++) {
         const asgs = SP.getSlot(state, currentWeek, d, s);
         const gap = gapSlots.has(d + "-" + s);
@@ -131,7 +158,7 @@
         const inner = asgs.length
           ? asgs.map(a => {
               const st = SP.findStaff(state, a.staffId);
-              const rc = roleColor(a.role);
+              const rc = staffColor(a.staffId);
               totalShifts++;
               return `<div class="asg" style="--rc:${rc.bar};--rcbg:${rc.bg};--rcfg:${rc.fg}">` +
                 `<strong>${escapeHtml(st ? st.name : "?")}</strong>` +
@@ -188,7 +215,8 @@
       const over = h > st.maxHours;
       const avail = st.availability.map(a => SP.DAYS[a].slice(0,2)).join(" ");
       const wageTxt = (Number(st.wage) || 0) > 0 ? ` · $${Number(st.wage)}/hr` : "";
-      return `<li><div class="staff-main"><strong>${escapeHtml(st.name)}</strong> ` +
+      const sc = staffColor(st.id);
+      return `<li><div class="staff-main"><span class="staff-dot" style="background:${sc.bar}" aria-hidden="true"></span><strong>${escapeHtml(st.name)}</strong> ` +
         `<span class="meta">${escapeHtml(st.role)}${wageTxt}${st.phone ? " · " + escapeHtml(st.phone) : ""}<br>Available: ${avail}</span>` +
         `<span class="hours${over ? " over" : ""}"><span class="hbar"><span style="width:${pct}%"></span></span>${h}h / ${st.maxHours}h</span></div>
         <div class="actions"><button class="btn small danger" data-remove="${st.id}">Remove</button></div></li>`;
